@@ -16,8 +16,9 @@ package goldpinger
 
 import (
 	"context"
-	"go.uber.org/zap"
 	"io/ioutil"
+
+	"go.uber.org/zap"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8snet "k8s.io/utils/net"
@@ -68,7 +69,8 @@ func getHostIP(p v1.Pod) string {
 
 	var hostIP string
 	for _, addr := range node.Status.Addresses {
-		if ipMatchesConfig(addr.Address) {
+		if (addr.Type == v1.NodeInternalIP || addr.Type == v1.NodeExternalIP) &&
+			ipMatchesConfig(addr.Address) {
 			hostIP = addr.Address
 		}
 	}
@@ -93,10 +95,20 @@ func getPodIP(p v1.Pod) string {
 	return podIP
 }
 
+func getPodNodeName(p v1.Pod) string {
+	if GoldpingerConfig.DisplayNodeName {
+		return p.Spec.NodeName
+	}
+
+	return p.Name
+}
+
 // GetAllPods returns a mapping from a pod name to a pointer to a GoldpingerPod(s)
 func GetAllPods() map[string]*GoldpingerPod {
 	timer := GetLabeledKubernetesCallsTimer()
 	listOpts := metav1.ListOptions{
+		ResourceVersion: "0",
+
 		LabelSelector: GoldpingerConfig.LabelSelector,
 		FieldSelector: "status.phase=Running", // only select Running pods, otherwise we will get them before they have IPs
 	}
@@ -111,7 +123,7 @@ func GetAllPods() map[string]*GoldpingerPod {
 	podMap := make(map[string]*GoldpingerPod)
 	for _, pod := range pods.Items {
 		podMap[pod.Name] = &GoldpingerPod{
-			Name:   pod.Name,
+			Name:   getPodNodeName(pod),
 			PodIP:  getPodIP(pod),
 			HostIP: getHostIP(pod),
 		}

@@ -1,6 +1,6 @@
 # Goldpinger
 
-[![Build Status](https://travis-ci.com/bloomberg/goldpinger.svg?branch=master)](https://travis-ci.com/bloomberg/goldpinger)
+[![Publish](https://github.com/bloomberg/goldpinger/actions/workflows/publish.yml/badge.svg)](https://github.com/bloomberg/goldpinger/actions/workflows/publish.yml)
 
 __Goldpinger__ makes calls between its instances to monitor your networking.
 It runs as a [`DaemonSet`](#example-yaml) on `Kubernetes` and produces `Prometheus` metrics that can be [scraped](#prometheus), [visualised](#grafana) and [alerted](#alert-manager) on.
@@ -68,21 +68,20 @@ The repo comes with two ways of building a `docker` image: compiling locally, an
 You will need `docker` version 17.05+ installed to support multi-stage builds.
 
 ```sh
-# step 1: launch the build
-make build-multistage
+# Build a local container without publishing
+make build
 
-# step 2: push the image somewhere
-namespace="docker.io/myhandle/" make tag
-namespace="docker.io/myhandle/" make push
+# Build & push the image somewhere
+namespace="docker.io/myhandle/" make build-release
 ```
 
 This was contributed via [@michiel](https://github.com/michiel) - kudos !
 
 ### Compiling locally
 
-In order to build `Goldpinger`, you are going to need `go` version 1.13+ and `docker`.
+In order to build `Goldpinger`, you are going to need `go` version 1.15+ and `docker`.
 
-Building from source code consists of compiling the binary and building a [Docker image](./build/Dockerfile-simple):
+Building from source code consists of compiling the binary and building a [Docker image](./Dockerfile):
 
 ```sh
 # step 0: check out the code
@@ -95,22 +94,32 @@ make bin/goldpinger
 ./bin/goldpinger --help
 
 # step 2: build the docker image containing the binary
-make build
+namespace="docker.io/myhandle/" make build
 
 # step 3: push the image somewhere
-namespace="docker.io/myhandle/" make tag
-namespace="docker.io/myhandle/" make push
+docker push $(namespace="docker.io/myhandle/" make version)
 ```
 
 ## Installation
-
 `Goldpinger` works by asking `Kubernetes` for pods with particular labels (`app=goldpinger`). While you can deploy `Goldpinger` in a variety of ways, it works very nicely as a `DaemonSet` out of the box.
 
-### Authentication with Kubernetes API
+### Helm Installation
+Goldpinger can be installed via [Helm](https://helm.sh/) using the following:
+
+```
+helm repo add goldpinger https://bloomberg.github.io/goldpinger
+helm repo update
+helm install goldpinger goldpinger/goldpinger
+```
+
+### Manual Installation
+`Goldpinger` can be installed manually via configuration similar to the following:
+
+#### Authentication with Kubernetes API
 
 `Goldpinger` supports using a `kubeconfig` (specify with `--kubeconfig-path`) or service accounts.
 
-### Example YAML
+#### Example YAML
 
 Here's an example of what you can do (using the in-cluster authentication to `Kubernetes` apiserver).
 
@@ -120,6 +129,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: goldpinger-serviceaccount
+  namespace: default
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -215,7 +225,7 @@ Note, that you will also need to add an RBAC rule to allow `Goldpinger` to list 
 
 ```yaml
 ---
-apiVersion: rbac.authorization.k8s.io/v1beta1
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: default
@@ -233,7 +243,7 @@ You can also see [an example of using `kubeconfig` in the `./extras`](./extras/e
 
 ### Using with IPv4/IPv6 dual-stack
 
-If your pods having IPv4 and IPv6 addresses assigned and you want to test communication over IPv6, you can specify the `USE_IPV6` environment variable which will use the IPv6 address on the pod and host.
+If your cluster IPv4/IPv6 dual-stack and you want to force IPv6, you can set the `IP_VERSIONS` environment variable to "6" (default is "4") which will use the IPv6 address on the pod and host.
 
 ![ipv6](./extras/screenshot-ipv6.png)
 
@@ -258,6 +268,27 @@ and `goldpinger` should show something like this:
 
 ![screenshot-DNS-resolution](./extras/dns-screenshot.png)
 
+### TCP and HTTP checks to external targets
+
+Instances can also be configured to do simple TCP or HTTP checks on external targets. This is useful for visualizing more nuanced connectivity flows.
+
+```sh
+      --tcp-targets=             A list of external targets(<host>:<port> or <ip>:<port>) to attempt a TCP check on (space delimited) [$TCP_TARGETS]
+      --http-targets=            A  list of external targets(<http or https>://<url>) to attempt an HTTP{S} check on. A 200 HTTP code is considered successful. (space delimited) [$HTTP_TARGETS]
+      --tcp-targets-timeout=  The timeout for a tcp check on the provided tcp-targets (default: 500) [$TCP_TARGETS_TIMEOUT]
+      --dns-targets-timeout=  The timeout for a tcp check on the provided udp-targets (default: 500) [$DNS_TARGETS_TIMEOUT]
+```
+
+```yaml
+        - name: HTTP_TARGETS
+          value: http://bloomberg.com
+        - name: TCP_TARGETS
+          value: 10.34.5.141:5000 10.34.195.193:6442
+```
+
+the timeouts for the TCP, DNS and HTTP checks can be configured via `TCP_TARGETS_TIMEOUT`, `DNS_TARGETS_TIMEOUT` and `HTTP_TARGETS_TIMEOUT` respectively. 
+
+![screenshot-tcp-http-checks](./extras/tcp-checks-screenshot.png)
 
 ## Usage
 
